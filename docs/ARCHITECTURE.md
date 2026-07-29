@@ -1,7 +1,9 @@
-# PinAds Studio AI — Architecture (Phase 1)
+# PinAds Studio AI — Architecture
 
-Status: **draft, pending approval**. Nothing beyond types, folder scaffolding, and this
-document has been implemented. No UI, no AI calls, no Pinterest integration exists yet.
+Status: **implemented through Phase 6**. This document was written during Phase 1
+(architecture-only) and is kept as the design record; §2's module table has been updated
+to reflect two modules added after Phase 1 (`pinterest`, `browser-agent`) — see the
+top-level `README.md` for a plain-language summary of what's actually built and working.
 
 ## 1. Product framing
 
@@ -51,11 +53,11 @@ storage namespace, manifest, or build output.
    │  jobs)         │   └──────────────┘   └────────────────┘
    └───────────────┘
 
-   Background Service Worker: owns Queue Manager + Storage lifecycle,
-   routes messages between popup/side-panel UI and content scripts.
+   Background Service Worker: sets side-panel-on-click behavior (composition root).
 
-   Content Scripts: scoped strictly to pinterest.com, used only for
-   future publish-time DOM interaction — not built in Phase 1–5.
+   Content Scripts: scoped to pinterest.com/ads.pinterest.com. Snapshot visible
+   interactive elements and execute single actions on request — see `pinterest`
+   and `browser-agent` in the table below for the two real publish paths.
 ```
 
 ### Module responsibilities
@@ -68,12 +70,14 @@ storage namespace, manifest, or build output.
 | `audience-builder` | Translates natural-language audience descriptions into structured `Audience` objects; recommends audiences from website analysis. | `types` |
 | `creative-studio` | Generates/regenerates headlines, descriptions, CTAs, seasonal variants; scores creative strength. Calls `ai-agent` for generation, does not call providers directly. | `ai-agent`, `types` |
 | `website-analyzer` | Fetches and summarizes a landing page (via background fetch, not content script) into structured signals (topic, offers, tone) used to seed strategy. | `ai-agent` (for summarization), `lib` |
-| `analytics` | Computes AI Score and performance suggestions from campaign + creative data. Pure functions over stored data; no external calls in Phase 1. | `types` |
+| `analytics` | Computes AI Score and performance suggestions from campaign + creative data. Pure functions over stored data; no external calls. | `types` |
 | `storage` | IndexedDB repository layer (Dexie-style API over raw IndexedDB) + typed repositories per entity. Only module allowed to touch the DB directly. | `types` |
 | `settings` | AI provider selection/keys, marketing mode, general preferences. Persists via `storage`. | `storage`, `types` |
 | `queue-manager` | Serializes/retries AI provider calls and long-running jobs (e.g., website analysis) so the UI stays responsive and providers aren't hammered. | `types` |
-| `background` | MV3 service worker entry point. Wires storage init, message routing (popup ⇄ content script), and hosts the queue manager. | all modules (composition root) |
-| `content` | Minimal Pinterest-scoped content scripts, reserved for Phase 6 (publish integration). Not implemented before then. | — |
+| `background` | MV3 service worker entry point. Sets side-panel-on-click behavior; the tab-driving work described below actually runs in the side panel, which holds the `tabs` permission. | — |
+| `content` | Injected on `pinterest.com`/`ads.pinterest.com`. Snapshots currently visible interactive elements (no fixed selectors) and executes a single click/type/select action on request from `browser-agent`. Decides nothing itself. | — |
+| `pinterest` | OAuth 2.0 connect flow (`chrome.identity.launchWebAuthFlow`) + a typed Ads API v5 client (ad accounts, boards, Pins, campaigns, ad groups, ads). The only module allowed to call `api.pinterest.com`. `campaign-manager.publishCampaignToPinterest` calls `publishCampaign` here and persists the result. | `settings`, `types` |
+| `browser-agent` | Drives a real Pinterest Ads Manager tab: opens/reuses a tab, then loops snapshot → `ai-agent.decideNextBrowserAction` (given a playbook transcribed from a real recorded session) → act via `content`, until the model reports on-page confirmation ("done") or gets stuck ("fail"). | `ai-agent`, `content` (via `tabController`) |
 | `ui` | React components/views/layout. Presentation only; talks to modules via Zustand stores + React Query, never imports module internals directly across the boundary except through documented store actions. | `store` |
 | `store` | Zustand stores (client state) + React Query wiring (async/server-ish state backed by IndexedDB via `storage`). | modules above |
 
@@ -99,7 +103,7 @@ path per mode.
 ## 4. AI provider abstraction
 
 Defined in `src/types/ai.ts` and implemented per-provider under
-`src/modules/ai-agent/providers/*` (Phase 3). The agent core only depends on the
+`src/modules/ai-agent/providers/*`. The agent core only depends on the
 `AIProvider` interface, never on a concrete SDK, so adding Gemini/Mistral/etc. later
 means adding one adapter file.
 
@@ -143,7 +147,7 @@ UI (chat input)
   → UI re-renders workspace + chat confirmation message
 ```
 
-## 6. Component hierarchy (UI, Phase 2 target)
+## 6. Component hierarchy (UI)
 
 ```
 <App>
@@ -196,9 +200,10 @@ PinAds-Studio-A/
 │   └─ icons/
 ├─ src/
 │   ├─ background/          # MV3 service worker entry (composition root)
-│   ├─ content/              # Pinterest-scoped content scripts (Phase 6+)
+│   ├─ content/              # Pinterest-scoped content script (DOM snapshot/act)
 │   ├─ modules/
 │   │   ├─ ai-agent/
+│   │   │   └─ providers/    # openai, anthropic, gemini, mistral, unavailable
 │   │   ├─ conversation-engine/
 │   │   ├─ campaign-manager/
 │   │   ├─ audience-builder/
@@ -207,15 +212,17 @@ PinAds-Studio-A/
 │   │   ├─ analytics/
 │   │   ├─ storage/
 │   │   ├─ settings/
-│   │   └─ queue-manager/
+│   │   ├─ queue-manager/
+│   │   ├─ pinterest/        # OAuth + Ads API v5 client (real publish path)
+│   │   └─ browser-agent/    # drives a real Ads Manager tab (real publish path)
 │   ├─ store/                # Zustand stores + React Query hooks
 │   ├─ types/                # Shared data models (see §7)
 │   ├─ lib/                  # Cross-cutting pure utilities (no module state)
 │   └─ ui/
 │       ├─ components/       # Presentational, reusable
 │       ├─ layout/           # AppShell, Sidebar, panels
-│       └─ views/             # ChatView, WorkspaceView, SettingsPanel
-├─ manifest.json             # MV3 manifest (Phase 2)
+│       └─ views/             # ChatView, WorkspaceView, SettingsView
+├─ manifest.config.ts        # MV3 manifest (source of truth; CRXJS builds manifest.json)
 ├─ package.json
 ├─ tsconfig.json
 ├─ tailwind.config.ts
@@ -225,18 +232,19 @@ PinAds-Studio-A/
 Each module directory contains an `index.ts` (public API surface) plus internal files
 not imported from outside the module.
 
-## 9. Phase boundary for this deliverable
+## 9. Implementation status
 
-Implemented now: this document, `src/types/*.ts`, empty module scaffolding with
-`index.ts` stubs and a one-line responsibility comment. Not implemented: build config,
-manifest, React app, AI provider adapters, storage engine, any business logic. That
-begins at Phase 2 upon your approval.
+Phases 1–6 are implemented (see the top-level `README.md` for a plain-language feature
+list). Not yet built: automated tests, image generation for Pins, and any further
+optimization pass (Phases 7–8).
 
-## 10. Open questions for approval
+## 10. Decisions made since Phase 1
 
-1. AI providers to support at launch (OpenAI + Anthropic first, Gemini/Mistral later?)
-   or all four from Phase 3?
-2. Should Phase 2 target Chrome side panel API (persistent, resizable) instead of the
-   classic popup? Side panel fits a chat-first UX much better and is MV3-native.
-3. Any existing brand assets (name lockup, color palette, icon) to design around, or
-   should Phase 2 propose a visual identity from scratch?
+The three open questions originally listed here have been resolved in the shipped build:
+
+1. **AI providers**: all four (OpenAI, Anthropic, Gemini, Mistral) are implemented behind
+   the same `AIProvider` interface — switchable anytime in Settings.
+2. **Popup vs. side panel**: side panel, as recommended — persistent, resizable, fits the
+   chat-first UX.
+3. **Visual identity**: a clean dark theme with Pinterest red as a single sparing accent
+   was used; no existing brand assets were supplied.
