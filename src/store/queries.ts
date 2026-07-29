@@ -15,10 +15,11 @@ import {
   createConversation,
   sendMessage,
 } from '../modules/conversation-engine';
-import { getSettings, saveSettings, saveProviderApiKey } from '../modules/settings';
+import { getSettings, saveSettings, saveProviderApiKey, saveProviderModel } from '../modules/settings';
+import { testProviderConnection } from '../modules/ai-agent';
 import * as pinterest from '../modules/pinterest';
 import { launchCampaignInAdsManager, type BrowserActionDecision } from '../modules/browser-agent';
-import type { Campaign, Settings } from '@/types';
+import type { AIProviderId, Campaign, Settings } from '@/types';
 
 export function useCampaigns() {
   return useQuery({ queryKey: queryKeys.campaigns, queryFn: listCampaigns });
@@ -86,6 +87,21 @@ export function useSaveProviderApiKey() {
     mutationFn: ({ providerId, apiKey }: { providerId: Settings['activeProviderId']; apiKey: string }) =>
       saveProviderApiKey(providerId, apiKey),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function useSaveProviderModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ providerId, model }: { providerId: AIProviderId; model: string }) =>
+      saveProviderModel(providerId, model),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function useTestProviderConnection() {
+  return useMutation({
+    mutationFn: (providerId: AIProviderId) => testProviderConnection(providerId),
   });
 }
 

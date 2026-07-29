@@ -3,22 +3,62 @@
  * Core logic depends only on the AIProvider interface from src/types/ai.ts.
  */
 
-import { getSettings, getProviderApiKey } from '../settings';
+import { getSettings, getProviderCredentials } from '../settings';
 import { createOpenAIProvider } from './providers/openai';
 import { createAnthropicProvider } from './providers/anthropic';
 import { createGeminiProvider } from './providers/gemini';
 import { createMistralProvider } from './providers/mistral';
 import { createUnavailableProvider } from './providers/unavailable';
 import { AGENT_TOOLS } from './toolDefinitions';
-import type { AIChatResponse, AIProvider, AIProviderId, ChatMessage, MarketingMode } from '@/types';
+import type {
+  AIChatRequest,
+  AIChatResponse,
+  AIProvider,
+  AIProviderId,
+  ChatMessage,
+  MarketingMode,
+} from '@/types';
 
-async function resolveProvider(providerId: AIProviderId): Promise<AIProvider> {
-  const apiKey = await getProviderApiKey(providerId);
-  if (!apiKey) {
-    throw new Error(
-      `No API key configured for ${providerId}. Add one in Settings to start chatting.`
-    );
-  }
+export const DEFAULT_MODELS: Record<AIProviderId, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-sonnet-20241022',
+  gemini: 'gemini-1.5-flash',
+  mistral: 'mistral-small-latest',
+};
+
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
+/** Static model choices shown in Settings — kept independent of any live API call. */
+export const MODEL_OPTIONS: Record<AIProviderId, ModelOption[]> = {
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini (fast, cheap)' },
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  ],
+  anthropic: [
+    { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku (fast)' },
+    { id: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
+  ],
+  gemini: [
+    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { id: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash-8B (fastest, highest free quota)' },
+    { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+  ],
+  mistral: [
+    { id: 'mistral-small-latest', label: 'Mistral Small (fast, higher rate limit)' },
+    { id: 'mistral-large-latest', label: 'Mistral Large' },
+    { id: 'open-mistral-nemo', label: 'Mistral Nemo' },
+  ],
+};
+
+/** Order providers are tried in when falling back — active provider is always tried first. */
+const FALLBACK_ORDER: AIProviderId[] = ['openai', 'anthropic', 'gemini', 'mistral'];
+
+function createProvider(providerId: AIProviderId, apiKey: string): AIProvider {
   switch (providerId) {
     case 'openai':
       return createOpenAIProvider(apiKey);
@@ -33,12 +73,37 @@ async function resolveProvider(providerId: AIProviderId): Promise<AIProvider> {
   }
 }
 
-const DEFAULT_MODELS: Record<AIProviderId, string> = {
-  openai: 'gpt-4o-mini',
-  anthropic: 'claude-3-5-sonnet-20241022',
-  gemini: 'gemini-1.5-flash',
-  mistral: 'mistral-large-latest',
-};
+interface ResolvedProvider {
+  providerId: AIProviderId;
+  provider: AIProvider;
+  model: string;
+}
+
+async function resolveProvider(providerId: AIProviderId): Promise<ResolvedProvider> {
+  const credentials = await getProviderCredentials(providerId);
+  if (!credentials?.apiKey) {
+    throw new Error(
+      `No API key configured for ${providerId}. Add one in Settings to start chatting.`
+    );
+  }
+  return {
+    providerId,
+    provider: createProvider(providerId, credentials.apiKey),
+    model: credentials.model || DEFAULT_MODELS[providerId],
+  };
+}
+
+/** Active provider first, then every other provider with a saved key, in a fixed order. */
+async function resolveProviderChain(): Promise<AIProviderId[]> {
+  const settings = await getSettings();
+  const configured = new Set(
+    settings.credentials.filter((c) => c.apiKey).map((c) => c.providerId)
+  );
+  const chain = [settings.activeProviderId, ...FALLBACK_ORDER].filter(
+    (id, index, arr) => configured.has(id) && arr.indexOf(id) === index
+  );
+  return chain.length ? chain : [settings.activeProviderId];
+}
 
 function buildSystemPrompt(mode: MarketingMode): string {
   const base = `You are the AI agent inside PinAds Studio AI, a Chrome extension that helps
@@ -63,6 +128,32 @@ Rules:
   return `${base}\n\n${modeInstructions[mode]}`;
 }
 
+/**
+ * Runs `send` against the active provider; on failure, if fallback is enabled and other
+ * providers have keys configured, retries against each of them in turn (e.g. a Mistral
+ * 429 rate-limit falls through to Gemini/OpenAI/Anthropic automatically). Throws a
+ * combined error only if every configured provider fails.
+ */
+async function withProviderFallback<T>(
+  send: (resolved: ResolvedProvider) => Promise<T>
+): Promise<T> {
+  const settings = await getSettings();
+  const chain = settings.providerFallbackEnabled
+    ? await resolveProviderChain()
+    : [settings.activeProviderId];
+
+  const failures: string[] = [];
+  for (const providerId of chain) {
+    try {
+      const resolved = await resolveProvider(providerId);
+      return await send(resolved);
+    } catch (error) {
+      failures.push(`${providerId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(`All configured AI providers failed:\n${failures.join('\n')}`);
+}
+
 export type InterpretResult = AIChatResponse;
 
 /**
@@ -72,38 +163,49 @@ export type InterpretResult = AIChatResponse;
  */
 export async function interpret(history: ChatMessage[]): Promise<InterpretResult> {
   const settings = await getSettings();
-  const provider = await resolveProvider(settings.activeProviderId);
   const systemPrompt = buildSystemPrompt(settings.marketingMode);
 
-  return provider.chat({
-    messages: [{ role: 'system', content: systemPrompt }, ...history],
-    tools: AGENT_TOOLS,
-    config: {
-      providerId: settings.activeProviderId,
-      model: DEFAULT_MODELS[settings.activeProviderId],
-      temperature: 0.7,
-      maxOutputTokens: 1200,
-    },
-  });
+  return withProviderFallback(({ provider, providerId, model }) =>
+    provider.chat({
+      messages: [{ role: 'system', content: systemPrompt }, ...history],
+      tools: AGENT_TOOLS,
+      config: { providerId, model, temperature: 0.7, maxOutputTokens: 1200 },
+    })
+  );
 }
 
 /** Lightweight single-shot text generation, used by creative-studio (no tools). */
 export async function generateText(prompt: string): Promise<string> {
-  const settings = await getSettings();
-  const provider = await resolveProvider(settings.activeProviderId);
-  const response = await provider.chat({
-    messages: [
-      { role: 'system', content: 'You are an expert Pinterest ads copywriter.' },
-      { role: 'user', content: prompt },
-    ],
-    config: {
-      providerId: settings.activeProviderId,
-      model: DEFAULT_MODELS[settings.activeProviderId],
-      temperature: 0.8,
-      maxOutputTokens: 500,
-    },
-  });
+  const response = await withProviderFallback(({ provider, providerId, model }) =>
+    provider.chat({
+      messages: [
+        { role: 'system', content: 'You are an expert Pinterest ads copywriter.' },
+        { role: 'user', content: prompt },
+      ],
+      config: { providerId, model, temperature: 0.8, maxOutputTokens: 500 },
+    })
+  );
   return response.message.content;
+}
+
+/**
+ * Tests one specific provider directly (no fallback) with a minimal request, for the
+ * Settings "Test connection" button. Never throws — always resolves with the outcome.
+ */
+export async function testProviderConnection(
+  providerId: AIProviderId
+): Promise<{ ok: true; model: string } | { ok: false; error: string }> {
+  try {
+    const resolved = await resolveProvider(providerId);
+    const request: AIChatRequest = {
+      messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+      config: { providerId, model: resolved.model, temperature: 0, maxOutputTokens: 10 },
+    };
+    await resolved.provider.chat(request);
+    return { ok: true, model: resolved.model };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export interface BrowserSnapshotElement {

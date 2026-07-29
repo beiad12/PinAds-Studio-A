@@ -3,6 +3,8 @@ import {
   useSettings,
   useSaveSettings,
   useSaveProviderApiKey,
+  useSaveProviderModel,
+  useTestProviderConnection,
   useConnectPinterest,
   useDisconnectPinterest,
   usePinterestAdAccounts,
@@ -11,14 +13,15 @@ import {
   useSelectPinterestBoard,
   useCreatePinterestBoard,
 } from '@/store/queries';
+import { MODEL_OPTIONS } from '@/modules/ai-agent';
 import { getPinterestRedirectUri } from '@/lib/pinterestRedirectUri';
 import type { AIProviderId, MarketingMode } from '@/types';
 
-const PROVIDERS: { id: AIProviderId; label: string; available: boolean }[] = [
-  { id: 'openai', label: 'OpenAI', available: true },
-  { id: 'anthropic', label: 'Anthropic', available: true },
-  { id: 'gemini', label: 'Gemini', available: true },
-  { id: 'mistral', label: 'Mistral', available: true },
+const PROVIDERS: { id: AIProviderId; label: string }[] = [
+  { id: 'openai', label: 'OpenAI' },
+  { id: 'anthropic', label: 'Anthropic' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'mistral', label: 'Mistral' },
 ];
 
 const MODES: { id: MarketingMode; label: string; description: string }[] = [
@@ -31,6 +34,8 @@ export function SettingsView() {
   const { data: settings } = useSettings();
   const saveSettings = useSaveSettings();
   const saveKey = useSaveProviderApiKey();
+  const saveModel = useSaveProviderModel();
+  const testConnection = useTestProviderConnection();
   const [apiKeyDraft, setApiKeyDraft] = useState('');
 
   const [pinterestClientId, setPinterestClientId] = useState('');
@@ -51,23 +56,36 @@ export function SettingsView() {
   return (
     <div className="mx-auto max-w-lg space-y-8 px-6 py-8">
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-white/90">AI provider</h2>
+        <h2 className="mb-1 text-sm font-semibold text-white/90">AI provider</h2>
+        <p className="mb-3 text-[11px] text-white/40">
+          The green dot means a key is saved for that provider. The active provider is tried
+          first; with fallback on, a failure (like a rate limit) automatically retries the next
+          configured provider below.
+        </p>
         <div className="grid grid-cols-2 gap-2">
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.id}
-              disabled={!p.available}
-              onClick={() => saveSettings.mutate({ activeProviderId: p.id })}
-              className={`rounded-xl px-3 py-2.5 text-left text-[13px] ring-1 transition ${
-                settings.activeProviderId === p.id
-                  ? 'bg-accent/10 text-white ring-accent/50'
-                  : 'bg-surface-raised text-white/70 ring-surface-border hover:bg-white/5'
-              } ${!p.available ? 'cursor-not-allowed opacity-40' : ''}`}
-            >
-              {p.label}
-              {!p.available && <span className="ml-1 text-[10px] text-white/40">(soon)</span>}
-            </button>
-          ))}
+          {PROVIDERS.map((p) => {
+            const hasKey = settings.credentials.some((c) => c.providerId === p.id && c.apiKey);
+            return (
+              <button
+                key={p.id}
+                onClick={() => {
+                  saveSettings.mutate({ activeProviderId: p.id });
+                  setApiKeyDraft('');
+                  testConnection.reset();
+                }}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] ring-1 transition ${
+                  settings.activeProviderId === p.id
+                    ? 'bg-accent/10 text-white ring-accent/50'
+                    : 'bg-surface-raised text-white/70 ring-surface-border hover:bg-white/5'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${hasKey ? 'bg-emerald-400' : 'bg-white/20'}`}
+                />
+                {p.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-3 flex gap-2">
@@ -89,11 +107,62 @@ export function SettingsView() {
             Save key
           </button>
         </div>
+
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-medium text-white/70">Model</p>
+          <select
+            value={
+              settings.credentials.find((c) => c.providerId === settings.activeProviderId)?.model ??
+              MODEL_OPTIONS[settings.activeProviderId][0].id
+            }
+            onChange={(e) =>
+              saveModel.mutate({ providerId: settings.activeProviderId, model: e.target.value })
+            }
+            className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none"
+          >
+            {MODEL_OPTIONS[settings.activeProviderId].map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={() => testConnection.mutate(settings.activeProviderId)}
+            disabled={testConnection.isPending}
+            className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/20 disabled:opacity-40"
+          >
+            {testConnection.isPending ? 'Testing…' : 'Test connection'}
+          </button>
+          {testConnection.data?.ok && (
+            <span className="text-[11px] text-emerald-400">
+              Connected — replied using {testConnection.data.model}.
+            </span>
+          )}
+          {testConnection.data && !testConnection.data.ok && (
+            <span className="text-[11px] text-red-400">{testConnection.data.error}</span>
+          )}
+        </div>
+
         <p className="mt-2 text-[11px] text-white/40">
-          {settings.credentials.some((c) => c.providerId === settings.activeProviderId)
+          {settings.credentials.some((c) => c.providerId === settings.activeProviderId && c.apiKey)
             ? 'Key saved for this provider.'
             : 'No key saved yet — chat will fail until one is added.'}
         </p>
+
+        <label className="mt-4 flex items-center justify-between rounded-xl bg-surface-raised px-3 py-2.5 ring-1 ring-surface-border">
+          <span className="text-[13px] text-white/80">
+            Auto-fallback to another provider on failure
+          </span>
+          <input
+            type="checkbox"
+            checked={settings.providerFallbackEnabled}
+            onChange={(e) => saveSettings.mutate({ providerFallbackEnabled: e.target.checked })}
+            className="h-4 w-4 accent-accent"
+          />
+        </label>
       </section>
 
       <section>

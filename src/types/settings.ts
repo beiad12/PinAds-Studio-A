@@ -11,6 +11,8 @@ export interface ProviderCredentials {
   providerId: AIProviderId;
   /** Stored via chrome.storage, never synced in plaintext to disk beyond that. */
   apiKey: string;
+  /** Model id to use for this provider; falls back to a per-provider default when unset. */
+  model?: string;
 }
 
 export interface Settings {
@@ -19,6 +21,9 @@ export interface Settings {
   marketingMode: MarketingMode;
   /** Default currency for new campaigns until overridden per-campaign. */
   defaultCurrency: string;
+  /** When true (default), a failed provider call automatically retries with the next
+   *  configured provider instead of failing the whole request. */
+  providerFallbackEnabled: boolean;
   pinterestApp?: PinterestAppCredentials;
   pinterestConnection?: PinterestConnection;
   updatedAt: string; // ISO timestamp
