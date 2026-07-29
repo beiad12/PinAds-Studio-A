@@ -273,10 +273,10 @@ function PinEditor({
   return (
     <div className="space-y-3 text-[13px] text-white/80">
       <p className="text-white/50">
-        Pinterest ads always attach to a Pin. If you publish via the API, paste a public image
-        URL here and Pinterest fetches it directly. If you launch via browser automation, this
-        title is what the agent searches your existing Pinterest Pins for — make sure a similar
-        Pin already exists on your account.
+Optional. If you publish via the API, paste a public image URL here and Pinterest fetches
+        it directly. For browser automation, leave this blank to let the agent pick from your
+        existing saved Pins automatically, or set a title here to have it search for that
+        specific one.
       </p>
       {imageUrl && (
         <img

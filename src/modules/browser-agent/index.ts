@@ -54,8 +54,9 @@ function buildGoalDescription(campaign: Campaign) {
           countries: group.audience.locations.map((l) => l.countryName),
         }
       : undefined,
-    pinTitle: pin?.title ?? campaign.name,
+    pinTitle: pin?.title,
     pinDestinationUrl: pin?.destinationUrl || campaign.websiteUrl,
+    useAnyExistingPinIfNoneSpecified: !pin,
   });
 }
 
@@ -83,9 +84,9 @@ function buildPlaybook(campaign: Campaign): string {
 10. Still in Demographics, find "Ages" — click it, choose "Pick specific ages" if not already, then set "Minimum age" to the closest available option to ${group?.audience.ageRange.min ?? 18} and "Maximum age" to the closest available option to ${group?.audience.ageRange.max ?? 65} (dropdowns list values like 18, 19, 20 ... up to "65+").
 11. Leave "Languages" and "Devices" at their defaults ("All languages", "All devices") unless told otherwise.
 ${cpcStep}
-13. Scroll to the "Ads" section and click the "Select Pins" button. A "Select Pins" panel slides in from the right with a search box labeled "Search by keyword or Pin ID".
-14. Click into that search box and type "${pin?.title ?? campaign.name}". Wait for results to filter, then click the checkbox on the LEFT of the row whose "Name and ID" matches most closely (it doesn't need to be an exact match — pick the closest one). If genuinely nothing relevant appears after searching, use "fail" and explain that no matching Pin exists on the account yet — the user needs a Pin with a similar title/topic saved to a board first.
-15. Click the red "Add Pins" button (bottom-right of that panel) to confirm the selection and close the panel. This creates one ad per selected Pin — for a single Pin, you'll land on an "Ad details" step; its "Ad destination"/"Destination link" and "Call to action" are usually pre-filled correctly from the Pin — leave them as-is unless empty.
+13. Scroll to the "Ads" section and click the "Select Pins" button. A "Select Pins" panel slides in from the right, defaulting to an "All Pins" tab that already lists the account's existing saved Pins — these Pins already exist with their own title/link/description, nothing needs to be created.
+14. ${pin ? `There is a search box labeled "Search by keyword or Pin ID" — click it and type "${pin.title}", wait for results to filter, then click the checkbox on the LEFT of the closest-matching row.` : `No specific Pin was requested, so just use one of the account's existing Pins: click the checkbox on the LEFT of the first (or a clearly relevant) row in the "All Pins" list — do not search, do not overthink which one, any existing saved Pin is fine.`} Only use "fail" here if the "All Pins" list is completely empty (zero Pins on the whole account) — that's the one real blocker.
+15. Click the red "Add Pins" button (bottom-right of that panel) to confirm the selection and close the panel. This creates one ad per selected Pin — for a single Pin, you'll land on an "Ad details" step; its "Ad destination"/"Destination link" and "Call to action" are already pre-filled from the Pin's own data — leave them as-is.
 16. Finally, click the "Publish" button (bottom right — it replaces "Continue" once you're far enough into the flow). Its label may briefly change to "Publishing...".
 17. Wait for a confirmation — either a toast/banner containing text like "Campaign successfully submitted for approval", or the Campaign Manager reporting table showing this campaign by name with an "Active" status. Once you see that, use "done".`;
 }
@@ -99,16 +100,6 @@ export async function launchCampaignInAdsManager(
   campaign: Campaign,
   onStep?: (step: BrowserActionDecision) => void
 ): Promise<BrowserAgentResult> {
-  if (!campaign.adGroups[0]?.creative.pins.some((p) => p.imageUrl)) {
-    return {
-      success: false,
-      message:
-        'Add a Pin title (and ideally an image URL) in the Pins tab before launching — the agent ' +
-        'searches your existing Pinterest Pins by that title to attach one to this campaign.',
-      steps: [],
-    };
-  }
-
   const tabId = await ensurePinterestAdsTab();
   const goal = buildGoalDescription(campaign);
   const playbook = buildPlaybook(campaign);
