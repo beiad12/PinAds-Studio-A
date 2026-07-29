@@ -6,10 +6,23 @@ import {
   usePublishCampaign,
   useSettings,
   useLaunchCampaignBrowserAgent,
+  useUpdateBudget,
+  useUpdateMaxCpcBid,
+  useUpdateAudience,
 } from '@/store/queries';
 import { ScoreBadge } from '../components/ScoreBadge';
 import type { BrowserActionDecision } from '@/modules/browser-agent';
-import type { Pin } from '@/types';
+import type { AdGroup, Budget, Pin } from '@/types';
+
+const COUNTRY_OPTIONS: { code: string; name: string }[] = [
+  { code: 'US', name: 'United States' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'MX', name: 'Mexico' },
+];
 
 const TABS = ['Summary', 'Audience', 'Budget', 'Creative', 'Pins', 'History'] as const;
 type Tab = (typeof TABS)[number];
@@ -21,6 +34,9 @@ export function WorkspaceView() {
   const upsertPin = useUpsertPin();
   const publish = usePublishCampaign();
   const launchAgent = useLaunchCampaignBrowserAgent();
+  const updateBudget = useUpdateBudget();
+  const updateMaxCpcBid = useUpdateMaxCpcBid();
+  const updateAudience = useUpdateAudience();
   const [tab, setTab] = useState<Tab>('Summary');
   const [agentSteps, setAgentSteps] = useState<BrowserActionDecision[]>([]);
 
@@ -171,33 +187,21 @@ export function WorkspaceView() {
         )}
 
         {tab === 'Audience' && group && (
-          <div className="space-y-4 text-[13px] text-white/80">
-            <Row label="Gender" value={group.audience.gender} />
-            <Row
-              label="Age range"
-              value={`${group.audience.ageRange.min}–${group.audience.ageRange.max}`}
-            />
-            <Row
-              label="Locations"
-              value={group.audience.locations.map((l) => l.countryName).join(', ') || '—'}
-            />
-            <Row
-              label="Interests"
-              value={group.audience.interests.map((i) => i.label).join(', ') || '—'}
-            />
-            <Row
-              label="Keywords"
-              value={group.audience.keywords.map((k) => k.term).join(', ') || '—'}
-            />
-          </div>
+          <AudienceEditor
+            campaignId={campaign.id}
+            group={group}
+            onSave={(patch) => updateAudience.mutate({ campaignId: campaign.id, patch })}
+          />
         )}
 
         {tab === 'Budget' && (
-          <div className="space-y-4 text-[13px] text-white/80">
-            <Row label="Amount" value={`$${campaign.budget.amount}`} />
-            <Row label="Type" value={campaign.budget.type} />
-            <Row label="Currency" value={campaign.budget.currency} />
-          </div>
+          <BudgetEditor
+            campaignId={campaign.id}
+            budget={campaign.budget}
+            maxCpcBid={campaign.maxCpcBid}
+            onSaveBudget={(amount, type) => updateBudget.mutate({ campaignId: campaign.id, amount, type })}
+            onSaveCpc={(amount) => updateMaxCpcBid.mutate({ campaignId: campaign.id, amount })}
+          />
         )}
 
         {tab === 'Creative' && group && (
@@ -269,8 +273,10 @@ function PinEditor({
   return (
     <div className="space-y-3 text-[13px] text-white/80">
       <p className="text-white/50">
-        Pinterest ads always attach to a Pin, and Pins require an image. Paste a public image URL
-        — Pinterest fetches it directly, no upload needed.
+        Pinterest ads always attach to a Pin. If you publish via the API, paste a public image
+        URL here and Pinterest fetches it directly. If you launch via browser automation, this
+        title is what the agent searches your existing Pinterest Pins for — make sure a similar
+        Pin already exists on your account.
       </p>
       {imageUrl && (
         <img
@@ -310,6 +316,192 @@ function PinEditor({
       >
         Save pin
       </button>
+    </div>
+  );
+}
+
+function AudienceEditor({
+  campaignId,
+  group,
+  onSave,
+}: {
+  campaignId: string;
+  group: AdGroup;
+  onSave: (patch: {
+    gender: 'women' | 'men' | 'all';
+    ageMin: number;
+    ageMax: number;
+    countryCode: string;
+    countryName: string;
+  }) => void;
+}) {
+  const [gender, setGender] = useState(group.audience.gender);
+  const [ageMin, setAgeMin] = useState(group.audience.ageRange.min);
+  const [ageMax, setAgeMax] = useState(group.audience.ageRange.max);
+  const [countryCode, setCountryCode] = useState(
+    group.audience.locations[0]?.countryCode ?? 'US'
+  );
+
+  useEffect(() => {
+    setGender(group.audience.gender);
+    setAgeMin(group.audience.ageRange.min);
+    setAgeMax(group.audience.ageRange.max);
+    setCountryCode(group.audience.locations[0]?.countryCode ?? 'US');
+  }, [campaignId, group.audience.gender, group.audience.ageRange.min, group.audience.ageRange.max, group.audience.locations]);
+
+  return (
+    <div className="space-y-4 text-[13px] text-white/80">
+      <label className="block">
+        <span className="mb-1 block text-xs text-white/40">Gender</span>
+        <select
+          value={gender}
+          onChange={(e) => setGender(e.target.value as 'women' | 'men' | 'all')}
+          className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none"
+        >
+          <option value="all">All genders</option>
+          <option value="women">Women</option>
+          <option value="men">Men</option>
+        </select>
+      </label>
+
+      <div className="flex gap-3">
+        <label className="block flex-1">
+          <span className="mb-1 block text-xs text-white/40">Min age</span>
+          <input
+            type="number"
+            min={18}
+            max={65}
+            value={ageMin}
+            onChange={(e) => setAgeMin(Number(e.target.value))}
+            className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none focus:ring-white/20"
+          />
+        </label>
+        <label className="block flex-1">
+          <span className="mb-1 block text-xs text-white/40">Max age</span>
+          <input
+            type="number"
+            min={18}
+            max={65}
+            value={ageMax}
+            onChange={(e) => setAgeMax(Number(e.target.value))}
+            className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none focus:ring-white/20"
+          />
+        </label>
+      </div>
+
+      <label className="block">
+        <span className="mb-1 block text-xs text-white/40">Country</span>
+        <select
+          value={countryCode}
+          onChange={(e) => setCountryCode(e.target.value)}
+          className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none"
+        >
+          {COUNTRY_OPTIONS.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <Row
+        label="Interests"
+        value={group.audience.interests.map((i) => i.label).join(', ') || '— (set via chat)'}
+      />
+      <Row
+        label="Keywords"
+        value={group.audience.keywords.map((k) => k.term).join(', ') || '— (set via chat)'}
+      />
+
+      <button
+        onClick={() => {
+          const country = COUNTRY_OPTIONS.find((c) => c.code === countryCode)!;
+          onSave({ gender, ageMin, ageMax, countryCode: country.code, countryName: country.name });
+        }}
+        className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20"
+      >
+        Save audience
+      </button>
+    </div>
+  );
+}
+
+function BudgetEditor({
+  campaignId,
+  budget,
+  maxCpcBid,
+  onSaveBudget,
+  onSaveCpc,
+}: {
+  campaignId: string;
+  budget: Budget;
+  maxCpcBid?: number;
+  onSaveBudget: (amount: number, type: 'daily' | 'lifetime') => void;
+  onSaveCpc: (amount: number | undefined) => void;
+}) {
+  const [amount, setAmount] = useState(budget.amount);
+  const [type, setType] = useState(budget.type);
+  const [cpc, setCpc] = useState(maxCpcBid?.toString() ?? '');
+
+  useEffect(() => {
+    setAmount(budget.amount);
+    setType(budget.type);
+    setCpc(maxCpcBid?.toString() ?? '');
+  }, [campaignId, budget.amount, budget.type, maxCpcBid]);
+
+  return (
+    <div className="space-y-4 text-[13px] text-white/80">
+      <label className="block">
+        <span className="mb-1 block text-xs text-white/40">Budget type</span>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as 'daily' | 'lifetime')}
+          className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none"
+        >
+          <option value="daily">Daily</option>
+          <option value="lifetime">Lifetime</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-1 block text-xs text-white/40">Amount ({budget.currency})</span>
+        <input
+          type="number"
+          min={0}
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(Number(e.target.value))}
+          className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white ring-1 ring-surface-border focus:outline-none focus:ring-white/20"
+        />
+      </label>
+      <button
+        onClick={() => onSaveBudget(amount, type)}
+        className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20"
+      >
+        Save budget
+      </button>
+
+      <div className="border-t border-surface-border/60 pt-4">
+        <label className="block">
+          <span className="mb-1 block text-xs text-white/40">
+            Max CPC bid ({budget.currency}) — leave blank for automatic bidding
+          </span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={cpc}
+            onChange={(e) => setCpc(e.target.value)}
+            placeholder="Automatic (Pinterest Performance+ bidding)"
+            className="w-full rounded-xl bg-surface-raised px-3 py-2 text-[13px] text-white placeholder:text-white/30 ring-1 ring-surface-border focus:outline-none focus:ring-white/20"
+          />
+        </label>
+        <button
+          onClick={() => onSaveCpc(cpc.trim() ? Number(cpc) : undefined)}
+          className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/20"
+        >
+          Save CPC bid
+        </button>
+      </div>
     </div>
   );
 }

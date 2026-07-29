@@ -130,6 +130,7 @@ export interface BrowserActionDecision {
  */
 export async function decideNextBrowserAction(
   goalJson: string,
+  playbook: string,
   elements: BrowserSnapshotElement[],
   currentUrl: string,
   history: BrowserActionDecision[]
@@ -142,7 +143,7 @@ export async function decideNextBrowserAction(
     .join('\n');
   const historyLines =
     history
-      .slice(-8)
+      .slice(-10)
       .map(
         (h, i) =>
           `${i}. ${h.action}${h.index !== undefined ? ` #${h.index}` : ''}${h.value ? ` "${h.value}"` : ''} — ${h.reason}`
@@ -151,6 +152,12 @@ export async function decideNextBrowserAction(
 
   const prompt = `You control a real, live web browser tab open on Pinterest's Ads Manager to
 create and launch an ad campaign matching this goal (JSON): ${goalJson}
+
+Follow this known playbook, step by step, in order — it was captured from a real recording of
+this exact flow, so trust its field names and ordering over guessing. Only deviate if the page
+in front of you genuinely doesn't match a step (different UI variant, unexpected dialog, etc.):
+
+${playbook}
 
 Current page URL: ${currentUrl}
 
@@ -165,13 +172,14 @@ Reply with ONLY compact JSON, no prose, no markdown fences, no explanation outsi
 {"action":"click|type|select|wait|done|fail","index":<element index, omit for wait/done/fail>,"value":"<text for type/select, omit otherwise>","reason":"<one short sentence>"}
 
 Rules:
-- "click" presses a button/link/tab by index.
-- "type" fills a text input/textarea by index with "value".
-- "select" picks a dropdown option by index using the option's visible text as "value".
-- "wait" if the page looks like it's still loading or transitioning.
-- "done" only once there is clear on-page confirmation the campaign was created and is live (e.g. a success message, or it appears in a campaigns list with an active status).
-- "fail" if you're blocked (login required, no ad account, permission error) or have retried the same element 3+ times with no progress — explain clearly in "reason" so a human can take over from here.
-- Never invent an index that isn't listed above.`;
+- "click" presses a button/link/tab/checkbox/radio/chip-remove(x) by index.
+- "type" fills a text input/textarea by index with "value" (this replaces the field's content).
+- "select" is for a native <select> dropdown by index using the option's visible text as "value". Most of Pinterest's dropdowns are custom (a button/div you click to open, then a list of new options appears in the next snapshot) — for those, use two separate "click" actions instead: one to open it, one on the option once it appears.
+- "wait" if the page looks like it's still loading, transitioning, or a spinner/skeleton is visible.
+- "done" only once there is clear on-page confirmation the campaign was created and submitted (e.g. a toast/message saying it was submitted for approval, or it appears in the campaigns table).
+- "fail" if you're blocked (login required, no ad account, permission error, no matching Pin found) or have retried the same element 3+ times with no progress — explain clearly in "reason" so a human can take over from here.
+- Never invent an index that isn't listed above.
+- Ignore promotional tooltips/callouts unrelated to the current step (e.g. "Use creative from more places", "Switch default campaign creation setting") unless a step explicitly tells you to interact with one.`;
 
   const raw = await generateText(prompt);
   try {

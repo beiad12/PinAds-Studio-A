@@ -58,6 +58,8 @@ export interface Campaign {
   objective: CampaignObjective;
   status: CampaignStatus;
   budget: Budget;
+  /** Manual max CPC bid, same currency as budget. Unset = platform-optimized bidding. */
+  maxCpcBid?: number;
   websiteUrl?: string;
   adGroups: AdGroup[];
   aiScore?: AIScore;

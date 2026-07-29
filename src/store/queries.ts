@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from './queryClient';
-import { listCampaigns, getCampaign, upsertPin, publishCampaignToPinterest } from '../modules/campaign-manager';
+import {
+  listCampaigns,
+  getCampaign,
+  upsertPin,
+  publishCampaignToPinterest,
+  updateBudget,
+  updateAudience,
+  updateMaxCpcBid,
+} from '../modules/campaign-manager';
 import {
   listConversations,
   getConversation,
@@ -91,6 +99,59 @@ export function useUpsertPin() {
       campaignId: string;
       patch: { imageUrl?: string; title?: string; destinationUrl?: string };
     }) => upsertPin(campaignId, patch),
+    onSuccess: (campaign) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaign.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
+    },
+  });
+}
+
+export function useUpdateBudget() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      campaignId,
+      amount,
+      type,
+    }: {
+      campaignId: string;
+      amount: number;
+      type?: 'daily' | 'lifetime';
+    }) => updateBudget(campaignId, amount, type),
+    onSuccess: (campaign) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaign.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
+    },
+  });
+}
+
+export function useUpdateMaxCpcBid() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ campaignId, amount }: { campaignId: string; amount: number | undefined }) =>
+      updateMaxCpcBid(campaignId, amount),
+    onSuccess: (campaign) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaign.id) });
+    },
+  });
+}
+
+export function useUpdateAudience() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      campaignId,
+      patch,
+    }: {
+      campaignId: string;
+      patch: {
+        gender?: 'women' | 'men' | 'all';
+        ageMin?: number;
+        ageMax?: number;
+        countryCode?: string;
+        countryName?: string;
+      };
+    }) => updateAudience(campaignId, patch),
     onSuccess: (campaign) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaign.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });

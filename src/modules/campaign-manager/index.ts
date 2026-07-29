@@ -173,6 +173,12 @@ export async function updateBudget(
   return saveWithScore(campaign);
 }
 
+export async function updateMaxCpcBid(id: string, amount: number | undefined): Promise<Campaign> {
+  const campaign = await requireCampaign(id);
+  campaign.maxCpcBid = amount;
+  return saveWithScore(campaign);
+}
+
 export async function updateAllBudgets(amount: number, type?: 'daily' | 'lifetime'): Promise<Campaign[]> {
   const campaigns = await listCampaigns();
   const updated: Campaign[] = [];
