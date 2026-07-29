@@ -19,12 +19,14 @@ export default defineManifest({
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
-  permissions: ['storage', 'sidePanel'],
+  permissions: ['storage', 'sidePanel', 'identity'],
   host_permissions: [
     'https://api.openai.com/*',
     'https://api.anthropic.com/*',
     'https://generativelanguage.googleapis.com/*',
     'https://api.mistral.ai/*',
+    'https://api.pinterest.com/*',
+    'https://www.pinterest.com/*',
   ],
   optional_host_permissions: ['https://*/*', 'http://*/*'],
   icons: {

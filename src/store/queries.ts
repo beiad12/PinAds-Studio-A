@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from './queryClient';
-import { listCampaigns, getCampaign } from '../modules/campaign-manager';
+import { listCampaigns, getCampaign, upsertPin, publishCampaignToPinterest } from '../modules/campaign-manager';
 import {
   listConversations,
   getConversation,
@@ -8,6 +8,7 @@ import {
   sendMessage,
 } from '../modules/conversation-engine';
 import { getSettings, saveSettings, saveProviderApiKey } from '../modules/settings';
+import * as pinterest from '../modules/pinterest';
 import type { Settings } from '@/types';
 
 export function useCampaigns() {
@@ -76,5 +77,89 @@ export function useSaveProviderApiKey() {
     mutationFn: ({ providerId, apiKey }: { providerId: Settings['activeProviderId']; apiKey: string }) =>
       saveProviderApiKey(providerId, apiKey),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function useUpsertPin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      campaignId,
+      patch,
+    }: {
+      campaignId: string;
+      patch: { imageUrl?: string; title?: string; destinationUrl?: string };
+    }) => upsertPin(campaignId, patch),
+    onSuccess: (campaign) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaign.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
+    },
+  });
+}
+
+export function usePublishCampaign() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (campaignId: string) => publishCampaignToPinterest(campaignId),
+    onSettled: (_data, _error, campaignId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaignId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
+    },
+  });
+}
+
+export function useConnectPinterest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => pinterest.connect(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function useDisconnectPinterest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => pinterest.disconnect(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function usePinterestAdAccounts(enabled: boolean) {
+  return useQuery({
+    queryKey: ['pinterest', 'adAccounts'],
+    queryFn: () => pinterest.fetchAdAccounts(),
+    enabled,
+  });
+}
+
+export function usePinterestBoards(enabled: boolean) {
+  return useQuery({
+    queryKey: ['pinterest', 'boards'],
+    queryFn: () => pinterest.fetchBoards(),
+    enabled,
+  });
+}
+
+export function useSelectPinterestAdAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => pinterest.selectAdAccount(id, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function useSelectPinterestBoard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => pinterest.selectBoard(id, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+  });
+}
+
+export function useCreatePinterestBoard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => pinterest.createBoard(name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pinterest', 'boards'] }),
   });
 }

@@ -46,6 +46,10 @@ export interface AdGroup {
   name: string;
   audience: Audience;
   creative: Creative;
+  /** Populated once this ad group's Pin + ad exist on Pinterest. */
+  pinterestAdGroupId?: string;
+  pinterestPinId?: string;
+  pinterestAdId?: string;
 }
 
 export interface Campaign {
@@ -64,4 +68,10 @@ export interface Campaign {
   updatedAt: string; // ISO timestamp
   /** Set when this campaign was created via "duplicate" from another. */
   duplicatedFromCampaignId?: string;
+  /** Set once this campaign exists on Pinterest (i.e. actually published). */
+  pinterestCampaignId?: string;
+  pinterestAdAccountId?: string;
+  publishedAt?: string; // ISO timestamp
+  /** Last publish attempt error, shown in the workspace if publishing failed. */
+  publishError?: string;
 }

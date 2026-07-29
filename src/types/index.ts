@@ -6,3 +6,4 @@ export * from './conversation';
 export * from './ai';
 export * from './settings';
 export * from './workspace';
+export * from './pinterest';

@@ -3,6 +3,7 @@
  */
 
 import type { AIProviderId } from './ai';
+import type { PinterestAppCredentials, PinterestConnection } from './pinterest';
 
 export type MarketingMode = 'beginner' | 'professional' | 'autopilot';
 
@@ -18,5 +19,7 @@ export interface Settings {
   marketingMode: MarketingMode;
   /** Default currency for new campaigns until overridden per-campaign. */
   defaultCurrency: string;
+  pinterestApp?: PinterestAppCredentials;
+  pinterestConnection?: PinterestConnection;
   updatedAt: string; // ISO timestamp
 }

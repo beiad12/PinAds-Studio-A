@@ -6,6 +6,7 @@ import { campaignsRepo, conversationsRepo } from '../storage';
 import { computeAIScore } from '../analytics';
 import { createDefaultAudience, mergeAudiencePatch, parseAudienceInstruction } from '../audience-builder';
 import { generateHeadlines, generateDescriptions, createDefaultCTA } from '../creative-studio';
+import * as pinterest from '../pinterest';
 import { generateId, nowISO } from '@/lib/id';
 import type {
   AdGroup,
@@ -210,12 +211,74 @@ function structuredPatchFromArgs(args: Record<string, unknown>) {
 }
 
 export async function pauseCampaign(id: string): Promise<Campaign> {
-  return updateCampaign(id, { status: 'paused' });
+  const campaign = await updateCampaign(id, { status: 'paused' });
+  await syncStatusBestEffort(campaign);
+  return campaign;
 }
 
 export async function resumeCampaign(id: string): Promise<Campaign> {
+  const current = await requireCampaign(id);
+  const campaign = await updateCampaign(id, {
+    status: current.status === 'draft' ? 'draft' : 'active',
+  });
+  await syncStatusBestEffort(campaign);
+  return campaign;
+}
+
+async function syncStatusBestEffort(campaign: Campaign): Promise<void> {
+  if (!campaign.pinterestCampaignId) return;
+  try {
+    await pinterest.syncCampaignStatus(campaign);
+  } catch {
+    // Local status already saved; a failed remote sync isn't fatal here —
+    // the next publish/refresh attempt will surface the real error.
+  }
+}
+
+/**
+ * Actually publishes a campaign to Pinterest: creates the live Campaign, Pin(s),
+ * ad group(s), and ad(s) via the Ads API, then persists the resulting Pinterest
+ * object ids. This is the only path that puts a campaign live — it is never
+ * triggered automatically by the AI, only by an explicit user action in the UI.
+ */
+export async function publishCampaignToPinterest(id: string): Promise<Campaign> {
   const campaign = await requireCampaign(id);
-  return updateCampaign(id, { status: campaign.status === 'draft' ? 'draft' : 'active' });
+  try {
+    const published = await pinterest.publishCampaign(campaign);
+    return saveWithScore(published);
+  } catch (error) {
+    campaign.publishError = error instanceof Error ? error.message : String(error);
+    await saveWithScore(campaign);
+    throw error;
+  }
+}
+
+/**
+ * Creates or updates the Pin image/copy for a campaign's (first) ad group.
+ * Publishing requires a real image URL here — Pinterest ads always attach to
+ * a Pin, and Pins always require media.
+ */
+export async function upsertPin(
+  id: string,
+  patch: { imageUrl?: string; title?: string; destinationUrl?: string },
+  adGroupIndex = 0
+): Promise<Campaign> {
+  const campaign = await requireCampaign(id);
+  const group = campaign.adGroups[adGroupIndex];
+  if (!group) throw new Error(`Campaign ${id} has no ad group at index ${adGroupIndex}`);
+
+  const existing = group.creative.pins[0];
+  if (existing) {
+    Object.assign(existing, patch);
+  } else {
+    group.creative.pins.push({
+      id: generateId(),
+      imageUrl: patch.imageUrl,
+      title: patch.title ?? campaign.name,
+      destinationUrl: patch.destinationUrl ?? campaign.websiteUrl ?? '',
+    });
+  }
+  return saveWithScore(campaign);
 }
 
 export async function regenerateCreative(
