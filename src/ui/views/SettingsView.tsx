@@ -5,8 +5,8 @@ import type { AIProviderId, MarketingMode } from '@/types';
 const PROVIDERS: { id: AIProviderId; label: string; available: boolean }[] = [
   { id: 'openai', label: 'OpenAI', available: true },
   { id: 'anthropic', label: 'Anthropic', available: true },
-  { id: 'gemini', label: 'Gemini', available: false },
-  { id: 'mistral', label: 'Mistral', available: false },
+  { id: 'gemini', label: 'Gemini', available: true },
+  { id: 'mistral', label: 'Mistral', available: true },
 ];
 
 const MODES: { id: MarketingMode; label: string; description: string }[] = [

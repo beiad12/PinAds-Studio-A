@@ -6,6 +6,8 @@
 import { getSettings, getProviderApiKey } from '../settings';
 import { createOpenAIProvider } from './providers/openai';
 import { createAnthropicProvider } from './providers/anthropic';
+import { createGeminiProvider } from './providers/gemini';
+import { createMistralProvider } from './providers/mistral';
 import { createUnavailableProvider } from './providers/unavailable';
 import { AGENT_TOOLS } from './toolDefinitions';
 import type { AIChatResponse, AIProvider, AIProviderId, ChatMessage, MarketingMode } from '@/types';
@@ -22,10 +24,21 @@ async function resolveProvider(providerId: AIProviderId): Promise<AIProvider> {
       return createOpenAIProvider(apiKey);
     case 'anthropic':
       return createAnthropicProvider(apiKey);
+    case 'gemini':
+      return createGeminiProvider(apiKey);
+    case 'mistral':
+      return createMistralProvider(apiKey);
     default:
       return createUnavailableProvider(providerId);
   }
 }
+
+const DEFAULT_MODELS: Record<AIProviderId, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-sonnet-20241022',
+  gemini: 'gemini-1.5-flash',
+  mistral: 'mistral-large-latest',
+};
 
 function buildSystemPrompt(mode: MarketingMode): string {
   const base = `You are the AI agent inside PinAds Studio AI, a Chrome extension that helps
@@ -67,7 +80,7 @@ export async function interpret(history: ChatMessage[]): Promise<InterpretResult
     tools: AGENT_TOOLS,
     config: {
       providerId: settings.activeProviderId,
-      model: settings.activeProviderId === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet-20241022',
+      model: DEFAULT_MODELS[settings.activeProviderId],
       temperature: 0.7,
       maxOutputTokens: 1200,
     },
@@ -85,7 +98,7 @@ export async function generateText(prompt: string): Promise<string> {
     ],
     config: {
       providerId: settings.activeProviderId,
-      model: settings.activeProviderId === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet-20241022',
+      model: DEFAULT_MODELS[settings.activeProviderId],
       temperature: 0.8,
       maxOutputTokens: 500,
     },
