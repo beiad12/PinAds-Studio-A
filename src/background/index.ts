@@ -1,7 +1,10 @@
 /**
  * background: MV3 service worker entry point (composition root).
- * Wires storage init and message routing between UI and content scripts.
- * Phase 1 scaffold only — implementation begins per docs/ARCHITECTURE.md phasing.
+ * Opens the side panel on the toolbar icon click; storage/AI calls run in the
+ * side panel document itself in this build (see docs/ARCHITECTURE.md §9 for
+ * the future message-routing responsibility once content scripts land).
  */
 
-export {};
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error('Failed to set side panel behavior', error));
