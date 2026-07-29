@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { useCampaign, useUpsertPin, usePublishCampaign, useSettings } from '@/store/queries';
+import {
+  useCampaign,
+  useUpsertPin,
+  usePublishCampaign,
+  useSettings,
+  useLaunchCampaignBrowserAgent,
+} from '@/store/queries';
 import { ScoreBadge } from '../components/ScoreBadge';
+import type { BrowserActionDecision } from '@/modules/browser-agent';
 import type { Pin } from '@/types';
 
 const TABS = ['Summary', 'Audience', 'Budget', 'Creative', 'Pins', 'History'] as const;
@@ -13,7 +20,9 @@ export function WorkspaceView() {
   const { data: settings } = useSettings();
   const upsertPin = useUpsertPin();
   const publish = usePublishCampaign();
+  const launchAgent = useLaunchCampaignBrowserAgent();
   const [tab, setTab] = useState<Tab>('Summary');
+  const [agentSteps, setAgentSteps] = useState<BrowserActionDecision[]>([]);
 
   if (isLoading) {
     return <div className="p-6 text-white/40">Loading…</div>;
@@ -112,6 +121,50 @@ export function WorkspaceView() {
                 <p className="mt-2 text-red-400">
                   {campaign.publishError ?? (publish.error as Error)?.message}
                 </p>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-surface-raised p-4 ring-1 ring-surface-border">
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-white/40">
+                Launch via Ads Manager (browser automation)
+              </p>
+              <p className="mb-2 text-white/50">
+                No developer app needed — this drives a real Pinterest Ads Manager tab: it reads
+                what's on screen and clicks/types through campaign creation itself, step by step.
+                Watch the Pinterest tab while it runs.
+              </p>
+              <button
+                onClick={() => {
+                  setAgentSteps([]);
+                  launchAgent.mutate({
+                    campaign,
+                    onStep: (step) => setAgentSteps((prev) => [...prev, step]),
+                  });
+                }}
+                disabled={launchAgent.isPending}
+                className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 disabled:opacity-40"
+              >
+                {launchAgent.isPending ? 'Working in the Pinterest tab…' : 'Launch on Pinterest now'}
+              </button>
+
+              {agentSteps.length > 0 && (
+                <ol className="mt-3 space-y-1 border-t border-surface-border/60 pt-3">
+                  {agentSteps.map((s, i) => (
+                    <li key={i} className="text-[12px] text-white/60">
+                      <span className="text-white/30">{i + 1}.</span> {s.action}
+                      {s.index !== undefined ? ` #${s.index}` : ''}
+                      {s.value ? ` "${s.value}"` : ''} — {s.reason}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {launchAgent.data && (
+                <p className={`mt-2 ${launchAgent.data.success ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {launchAgent.data.message}
+                </p>
+              )}
+              {launchAgent.isError && (
+                <p className="mt-2 text-red-400">{(launchAgent.error as Error).message}</p>
               )}
             </div>
           </div>

@@ -9,7 +9,8 @@ import {
 } from '../modules/conversation-engine';
 import { getSettings, saveSettings, saveProviderApiKey } from '../modules/settings';
 import * as pinterest from '../modules/pinterest';
-import type { Settings } from '@/types';
+import { launchCampaignInAdsManager, type BrowserActionDecision } from '../modules/browser-agent';
+import type { Campaign, Settings } from '@/types';
 
 export function useCampaigns() {
   return useQuery({ queryKey: queryKeys.campaigns, queryFn: listCampaigns });
@@ -161,5 +162,21 @@ export function useCreatePinterestBoard() {
   return useMutation({
     mutationFn: (name: string) => pinterest.createBoard(name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pinterest', 'boards'] }),
+  });
+}
+
+export function useLaunchCampaignBrowserAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      campaign,
+      onStep,
+    }: {
+      campaign: Campaign;
+      onStep?: (step: BrowserActionDecision) => void;
+    }) => launchCampaignInAdsManager(campaign, onStep),
+    onSettled: (_data, _error, { campaign }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.campaign(campaign.id) });
+    },
   });
 }

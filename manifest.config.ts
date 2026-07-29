@@ -19,7 +19,7 @@ export default defineManifest({
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
-  permissions: ['storage', 'sidePanel', 'identity'],
+  permissions: ['storage', 'sidePanel', 'identity', 'tabs', 'scripting'],
   host_permissions: [
     'https://api.openai.com/*',
     'https://api.anthropic.com/*',
@@ -27,8 +27,16 @@ export default defineManifest({
     'https://api.mistral.ai/*',
     'https://api.pinterest.com/*',
     'https://www.pinterest.com/*',
+    'https://ads.pinterest.com/*',
   ],
   optional_host_permissions: ['https://*/*', 'http://*/*'],
+  content_scripts: [
+    {
+      matches: ['https://ads.pinterest.com/*', 'https://www.pinterest.com/*'],
+      js: ['src/content/index.ts'],
+      run_at: 'document_idle',
+    },
+  ],
   icons: {
     16: 'public/icons/icon16.png',
     48: 'public/icons/icon48.png',
